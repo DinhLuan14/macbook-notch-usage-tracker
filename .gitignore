@@ -1,0 +1,46 @@
+# Swift / Xcode
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+*.xcarchive
+*.dSYM
+*.profdata
+
+# Packaged applications and release artifacts
+build/
+dist/
+output/
+*.app
+*.dmg
+*.pkg
+*.zip
+*.sha256
+
+# Local editor and OS state
+.DS_Store
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+*.log
+Screenshot *.png
+codex-clipboard-*
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local.json
+*.local.plist
+*.pem
+*.p12
+*.key
+*.mobileprovision
+.claude/
+.codex/

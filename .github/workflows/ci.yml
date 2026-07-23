@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Toolchain
+        run: swift --version
+
+      - name: Checks
+        run: swift run ClaudeQuotaIslandChecks
+
+      - name: Script syntax
+        run: zsh -n scripts/*.sh
+
+      - name: Release build
+        run: swift build -c release -Xswiftc -warnings-as-errors
+
+      - name: App bundle
+        run: zsh scripts/build-app.sh
+
+      - name: Verify signature
+        run: |
+          plutil -lint "build/Claude Quota Island.app/Contents/Info.plist"
+          codesign --verify --deep --strict "build/Claude Quota Island.app"
