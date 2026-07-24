@@ -163,4 +163,9 @@ enum RemoteConnectionState: Equatable {
     var isConnected: Bool {
         self == .connected
     }
+
+    var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
+    }
 }

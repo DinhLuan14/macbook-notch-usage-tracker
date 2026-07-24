@@ -58,6 +58,7 @@ struct SettingsView: View {
             }
         }
         .frame(minWidth: 600, idealWidth: 640, minHeight: 500, idealHeight: 560)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var generalPage: some View {
@@ -71,6 +72,17 @@ struct SettingsView: View {
                         Text("Status-line bridge")
                         Spacer()
                         Text(model.statusLineSummary)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    HStack {
+                        Circle()
+                            .fill(model.quotaDataIsCurrent ? Color.mint : Color.orange)
+                            .frame(width: 8, height: 8)
+                        Text("Quota data")
+                        Spacer()
+                        Text(model.quotaDataSummary)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -114,25 +126,36 @@ struct SettingsView: View {
                         Text("SSH · \(model.remoteConfiguration.displayName)").tag(model.remoteSourceID)
                     }
 
-                    Picker("Project", selection: projectBinding) {
-                        Text("Automatic · monitored folders").tag(AppModel.automaticSelectionID)
-                        ForEach(model.recentProjects) { project in
-                            Text(projectPickerTitle(project)).tag(project.id)
+                    if model.displayPreferences.rightSideMode == .modelAndContext {
+                        Picker("Project", selection: projectBinding) {
+                            Text("Automatic · monitored folders").tag(AppModel.automaticSelectionID)
+                            ForEach(model.recentProjects) { project in
+                                Text(projectPickerTitle(project)).tag(project.id)
+                            }
                         }
-                    }
 
-                    Picker("Session", selection: sessionBinding) {
-                        Text("Automatic · most recent").tag(AppModel.automaticSelectionID)
-                        ForEach(model.recentSnapshots) { session in
-                            Text(sessionPickerTitle(session)).tag(session.id)
+                        Picker("Session", selection: sessionBinding) {
+                            Text("Automatic · most recent").tag(AppModel.automaticSelectionID)
+                            ForEach(model.recentSnapshots) { session in
+                                Text(sessionPickerTitle(session)).tag(session.id)
+                            }
                         }
+                    } else {
+                        Text(
+                            "Claude only mode tracks quota without showing a project, model, or context."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(.top, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            recentProjectsBox
+            if model.displayPreferences.rightSideMode == .modelAndContext {
+                recentProjectsBox
+            }
 
             GroupBox("System") {
                 Toggle("Launch at Login", isOn: launchAtLoginBinding)
@@ -170,12 +193,25 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
 
+                    Picker("Right side", selection: $model.displayPreferences.rightSideMode) {
+                        ForEach(RightSideDisplayMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
                     Toggle("Show reset time", isOn: $model.displayPreferences.showsResetTime)
                         .disabled(model.displayPreferences.style == .minimal)
                     Toggle("Show effort", isOn: $model.displayPreferences.showsEffort)
-                        .disabled(model.displayPreferences.style == .minimal)
+                        .disabled(
+                            model.displayPreferences.style == .minimal
+                                || model.displayPreferences.rightSideMode == .claudeOnly
+                        )
                     Toggle("Show token count", isOn: $model.displayPreferences.showsTokenCount)
-                        .disabled(model.displayPreferences.style == .minimal)
+                        .disabled(
+                            model.displayPreferences.style == .minimal
+                                || model.displayPreferences.rightSideMode == .claudeOnly
+                        )
                 }
                 .padding(.top, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -458,6 +494,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20)
         }
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var sessionBinding: Binding<String> {

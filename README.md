@@ -23,6 +23,10 @@ Hover the island for effort, reset details, token count, and project/session
 selection. The compact width is measured from the current content and the
 physical notch safe areas reported by AppKit.
 
+If you only want quota tracking, choose **Appearance → Right side → Claude
+only**. The right side then stays compact and shows `Claude` without project,
+model, context, or conversation controls.
+
 Usage colors are mint below 50%, orange from 50–79%, and red from 80%.
 
 ## Why this exists
@@ -133,6 +137,7 @@ notes are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   distribution should use a Developer ID signature and Apple notarization.
 - SSH is intentionally non-interactive (`BatchMode=yes`); password prompts and
   first-time host-key prompts are not handled by the app.
+- The app retries an installed SSH source after transient tunnel failures.
 
 ## Attribution and license
 

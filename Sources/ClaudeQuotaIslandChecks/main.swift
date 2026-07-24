@@ -123,6 +123,10 @@ func checkSourceAwareSnapshots() throws {
 
 func checkFormatting() throws {
     try expect(DisplayPreferences().showsResetTime, "reset time enabled by default")
+    try expect(
+        DisplayPreferences().rightSideMode == .modelAndContext,
+        "model and context enabled by default"
+    )
     try expect(QuotaFormatter.percentage(31, metric: .used) == 31, "used quota")
     try expect(QuotaFormatter.percentage(31, metric: .remaining) == 69, "remaining quota")
     let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -130,6 +134,63 @@ func checkFormatting() throws {
     try expect(QuotaFormatter.resetDuration(until: reset, now: now) == "4h34m", "full reset duration")
     try expect(QuotaFormatter.resetDuration(until: reset, now: now, compact: true) == "4h34", "compact reset duration")
     try expect(QuotaFormatter.tokenCount(126_000) == "126k", "token formatting")
+}
+
+func checkQuotaSelectionAndPreferenceMigration() throws {
+    let olderTimestampedQuota = ClaudeSessionSnapshot(
+        sessionID: "older",
+        fiveHour: ClaudeQuotaWindow(usedPercentage: 2, resetsAt: nil),
+        sevenDay: ClaudeQuotaWindow(usedPercentage: 45, resetsAt: nil),
+        quotaUpdatedAt: Date(timeIntervalSince1970: 1_000),
+        updatedAt: Date(timeIntervalSince1970: 3_000)
+    )
+    let newerLegacyQuota = ClaudeSessionSnapshot(
+        sessionID: "newer",
+        fiveHour: ClaudeQuotaWindow(usedPercentage: 17, resetsAt: nil),
+        sevenDay: ClaudeQuotaWindow(usedPercentage: 47, resetsAt: nil),
+        quotaUpdatedAt: nil,
+        updatedAt: Date(timeIntervalSince1970: 2_000)
+    )
+    let selected = QuotaSnapshotSelector.latest(
+        in: [olderTimestampedQuota, newerLegacyQuota]
+    )
+    try expect(
+        selected?.sessionID == "newer",
+        "newer legacy quota must beat an older timestamped quota"
+    )
+
+    let now = Date(timeIntervalSince1970: 10_000)
+    let expired = ClaudeQuotaWindow(
+        usedPercentage: 90,
+        resetsAt: now.addingTimeInterval(-1)
+    )
+    let active = ClaudeQuotaWindow(
+        usedPercentage: 20,
+        resetsAt: now.addingTimeInterval(1)
+    )
+    try expect(expired.current(at: now) == nil, "expired quota window is hidden")
+    try expect(active.current(at: now) != nil, "active quota window remains visible")
+
+    let legacyPreferences = """
+    {
+      "style": "iconCompact",
+      "quotaMetric": "remaining",
+      "showsResetTime": false,
+      "showsEffort": false,
+      "showsTokenCount": true
+    }
+    """
+    let decoded = try JSONDecoder().decode(
+        DisplayPreferences.self,
+        from: Data(legacyPreferences.utf8)
+    )
+    try expect(decoded.style == .iconCompact, "legacy display style migration")
+    try expect(decoded.quotaMetric == .remaining, "legacy quota metric migration")
+    try expect(
+        decoded.rightSideMode == .modelAndContext,
+        "legacy preferences default to model and context"
+    )
+    try expect(!decoded.showsResetTime, "legacy reset preference preservation")
 }
 
 func checkInstallerRoundTrip() throws {
@@ -210,6 +271,7 @@ do {
     try checkSnapshotPipeline()
     try checkSourceAwareSnapshots()
     try checkFormatting()
+    try checkQuotaSelectionAndPreferenceMigration()
     try checkInstallerRoundTrip()
     print("All ClaudeQuotaIsland checks passed.")
     exit(0)
