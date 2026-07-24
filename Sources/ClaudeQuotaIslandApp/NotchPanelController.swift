@@ -1,4 +1,5 @@
 import AppKit
+import ClaudeQuotaIslandCore
 import SwiftUI
 
 @MainActor
@@ -123,8 +124,15 @@ final class NotchPanelController {
         isExpanded: Bool
     ) -> NSRect {
         let visual = metrics.visualMetrics(isExpanded: isExpanded)
+        let originX = NotchPanelFrameResolver.originX(
+            centerX: ScreenResolver.notchCenterX(for: screen),
+            leftWidth: visual.leftWidth,
+            notchWidth: visual.notchWidth,
+            totalWidth: visual.totalWidth,
+            hasPhysicalNotch: metrics.hasPhysicalNotch
+        )
         return NSRect(
-            x: screen.frame.midX - visual.totalWidth / 2,
+            x: originX,
             y: screen.frame.maxY - visual.height,
             width: visual.totalWidth,
             height: visual.height

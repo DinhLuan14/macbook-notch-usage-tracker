@@ -261,6 +261,15 @@ enum ScreenResolver {
         return hasNotch(screen) ? 180 : 110
     }
 
+    static func notchCenterX(for screen: NSScreen) -> CGFloat {
+        if hasNotch(screen),
+           let left = screen.auxiliaryTopLeftArea,
+           let right = screen.auxiliaryTopRightArea {
+            return (left.maxX + right.minX) / 2
+        }
+        return screen.frame.midX
+    }
+
     static func barHeight(for screen: NSScreen) -> CGFloat {
         let measured = screen.safeAreaInsets.top
         return min(max(measured, 30), 40)

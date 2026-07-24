@@ -193,6 +193,32 @@ func checkQuotaSelectionAndPreferenceMigration() throws {
     try expect(!decoded.showsResetTime, "legacy reset preference preservation")
 }
 
+func checkNotchPanelAlignment() throws {
+    let physicalOrigin = NotchPanelFrameResolver.originX(
+        centerX: 1_000,
+        leftWidth: 140,
+        notchWidth: 180,
+        totalWidth: 380,
+        hasPhysicalNotch: true
+    )
+    try expect(
+        physicalOrigin + 140 + 90 == 1_000,
+        "physical notch spacer remains centered with asymmetric side widths"
+    )
+
+    let fallbackOrigin = NotchPanelFrameResolver.originX(
+        centerX: 1_000,
+        leftWidth: 140,
+        notchWidth: 180,
+        totalWidth: 380,
+        hasPhysicalNotch: false
+    )
+    try expect(
+        fallbackOrigin + 190 == 1_000,
+        "fallback island remains centered by total width"
+    )
+}
+
 func checkInstallerRoundTrip() throws {
     let root = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -272,6 +298,7 @@ do {
     try checkSourceAwareSnapshots()
     try checkFormatting()
     try checkQuotaSelectionAndPreferenceMigration()
+    try checkNotchPanelAlignment()
     try checkInstallerRoundTrip()
     print("All ClaudeQuotaIsland checks passed.")
     exit(0)
