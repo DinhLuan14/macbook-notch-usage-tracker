@@ -251,6 +251,38 @@ func checkInstallerRoundTrip() throws {
     let installed = try installer.install(executableURL: executable, preserveExistingStatusLine: true)
     try expect(installed.isHealthy, "wrapper installation")
     try expect(installed.wrapsExistingStatusLine, "wrapper marker")
+    var installedSettings = try JSONSerialization.jsonObject(
+        with: Data(contentsOf: paths.settingsURL)
+    ) as? [String: Any]
+    var installedStatusLine = installedSettings?["statusLine"] as? [String: Any]
+    try expect(
+        (installedStatusLine?["refreshInterval"] as? NSNumber)?.intValue
+            == StatusLineInstaller.refreshInterval,
+        "five-second status-line refresh installation"
+    )
+
+    installedStatusLine?.removeValue(forKey: "refreshInterval")
+    installedSettings?["statusLine"] = installedStatusLine
+    try JSONSerialization.data(
+        withJSONObject: installedSettings ?? [:],
+        options: [.prettyPrinted]
+    ).write(to: paths.settingsURL)
+    let legacyStatus = try installer.status()
+    try expect(
+        !legacyStatus.isHealthy,
+        "legacy installation without refresh interval needs repair"
+    )
+    let refreshed = try installer.repair(executableURL: executable)
+    try expect(refreshed.isHealthy, "refresh interval repair")
+    let refreshedSettings = try JSONSerialization.jsonObject(
+        with: Data(contentsOf: paths.settingsURL)
+    ) as? [String: Any]
+    let refreshedStatusLine = refreshedSettings?["statusLine"] as? [String: Any]
+    try expect(
+        (refreshedStatusLine?["refreshInterval"] as? NSNumber)?.intValue
+            == StatusLineInstaller.refreshInterval,
+        "repair restores five-second status-line refresh"
+    )
     let managedMode = try FileManager.default.attributesOfItem(
         atPath: paths.managedBinDirectory.path
     )[.posixPermissions] as? NSNumber

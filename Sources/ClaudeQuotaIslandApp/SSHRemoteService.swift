@@ -214,6 +214,7 @@ def install_settings(target_settings, target_wrapper, target_delegate):
         "type": "command",
         "command": target_wrapper,
         "padding": current.get("padding", 2) if isinstance(current, dict) else 2,
+        "refreshInterval": 5,
     }
     write_json(target_settings, settings)
 

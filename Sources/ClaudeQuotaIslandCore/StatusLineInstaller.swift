@@ -39,6 +39,7 @@ public struct StatusLineInstallationPaths: Sendable {
 
 public struct StatusLineInstallationStatus: Equatable, Sendable {
     public var isConfigured: Bool
+    public var refreshIntervalIsConfigured: Bool
     public var helperExists: Bool
     public var scriptExists: Bool
     public var delegateExists: Bool
@@ -48,6 +49,7 @@ public struct StatusLineInstallationStatus: Equatable, Sendable {
 
     public var isHealthy: Bool {
         isConfigured
+            && refreshIntervalIsConfigured
             && helperExists
             && scriptExists
             && (!wrapsExistingStatusLine || delegateExists)
@@ -74,6 +76,7 @@ public enum StatusLineInstallerError: LocalizedError, Sendable {
 
 public final class StatusLineInstaller: @unchecked Sendable {
     public static let originalStatusLineKey = "_claudeQuotaIslandOriginalStatusLine"
+    public static let refreshInterval = 5
 
     public let paths: StatusLineInstallationPaths
     private let fileManager: FileManager
@@ -91,9 +94,11 @@ public final class StatusLineInstaller: @unchecked Sendable {
         let statusLine = settings["statusLine"] as? [String: Any]
         let command = statusLine?["command"] as? String
         let isConfigured = command == paths.scriptURL.path
+        let refreshInterval = (statusLine?["refreshInterval"] as? NSNumber)?.intValue
         let wrapsExistingStatusLine = isConfigured && settings[Self.originalStatusLineKey] != nil
         return StatusLineInstallationStatus(
             isConfigured: isConfigured,
+            refreshIntervalIsConfigured: refreshInterval == Self.refreshInterval,
             helperExists: fileManager.isExecutableFile(atPath: paths.helperURL.path),
             scriptExists: fileManager.isExecutableFile(atPath: paths.scriptURL.path),
             delegateExists: fileManager.isExecutableFile(atPath: paths.delegateURL.path),
@@ -134,12 +139,7 @@ public final class StatusLineInstaller: @unchecked Sendable {
         }
 
         try writeExecutable(managedScript(), to: paths.scriptURL)
-        settings["statusLine"] = [
-            "type": "command",
-            "command": paths.scriptURL.path,
-            "padding": 2,
-            "refreshInterval": 5,
-        ]
+        settings["statusLine"] = managedStatusLine(preservingPaddingFrom: settings["statusLine"])
         try writeSettingsWithBackup(settings)
         return try status()
     }
@@ -150,12 +150,12 @@ public final class StatusLineInstaller: @unchecked Sendable {
         guard current.isConfigured else {
             return try install(executableURL: executableURL, preserveExistingStatusLine: current.hasConflict)
         }
+        var settings = try loadSettings()
         try preparePrivateDirectory(paths.managedBinDirectory)
         try preparePrivateDirectory(paths.cacheDirectory)
         try installHelper(from: executableURL)
         try writeExecutable(managedScript(), to: paths.scriptURL)
         if current.wrapsExistingStatusLine && !current.delegateExists {
-            let settings = try loadSettings()
             let original = settings[Self.originalStatusLineKey] as? [String: Any]
             guard let command = original?["command"] as? String, !command.isEmpty else {
                 throw StatusLineInstallerError.existingStatusLine(command: nil)
@@ -165,6 +165,8 @@ public final class StatusLineInstaller: @unchecked Sendable {
                 to: paths.delegateURL
             )
         }
+        settings["statusLine"] = managedStatusLine(preservingPaddingFrom: settings["statusLine"])
+        try writeSettingsWithBackup(settings)
         return try status()
     }
 
@@ -220,6 +222,16 @@ public final class StatusLineInstaller: @unchecked Sendable {
         let data = try Data(contentsOf: executableURL, options: .mappedIfSafe)
         try data.write(to: paths.helperURL, options: .atomic)
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: paths.helperURL.path)
+    }
+
+    private func managedStatusLine(preservingPaddingFrom existing: Any?) -> [String: Any] {
+        let existingStatusLine = existing as? [String: Any]
+        return [
+            "type": "command",
+            "command": paths.scriptURL.path,
+            "padding": existingStatusLine?["padding"] ?? 2,
+            "refreshInterval": Self.refreshInterval,
+        ]
     }
 
     private func loadSettings() throws -> [String: Any] {
