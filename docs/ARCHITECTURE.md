@@ -23,6 +23,13 @@ Transcript discovery supplements old sessions with project/model/token
 metadata. Live status-line data remains authoritative for exact context and
 quota.
 
+Managed local and SSH status-line bridges use Claude Code's
+`refreshInterval: 5`, so Claude re-runs the bridge every five seconds in
+addition to event-driven status updates. The app checks its snapshot cache every
+two seconds, so a newly emitted payload normally reaches the notch within two
+seconds. This timer does not call a separate Claude usage API; it only republishes
+the latest quota fields Claude provides to the status line.
+
 ## SSH flow
 
 ```text
