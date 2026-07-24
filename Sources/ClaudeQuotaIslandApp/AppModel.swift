@@ -88,9 +88,11 @@ final class AppModel: ObservableObject {
     private var monitorTask: Task<Void, Never>?
     private var hoverCloseTask: Task<Void, Never>?
     private var remoteDiscoveryTask: Task<Void, Never>?
+    private var remoteReconnectTask: Task<Void, Never>?
     private var localDiscoveryTask: Task<Void, Never>?
     private let remoteTunnel = SSHRemoteTunnel()
     private var remotePayloadServer: RemotePayloadServer?
+    private var remoteConnectionDesired = false
 
     nonisolated static func runtimeDefaults() -> UserDefaults {
         if let suite = ProcessInfo.processInfo.environment["CQI_DEFAULTS_SUITE"],
@@ -192,25 +194,18 @@ final class AppModel: ObservableObject {
     }
 
     var quotaSnapshot: ClaudeSessionSnapshot? {
-        let candidates: [ClaudeSessionSnapshot]
-        if let sourceID = selectedSnapshot?.resolvedSource.id {
-            candidates = snapshots.filter {
-                $0.resolvedSource.id == sourceID && $0.isQuotaAvailable
-            }
-        } else {
-            candidates = snapshots.filter(\.isQuotaAvailable)
-        }
-        let timestamped = candidates.filter { $0.quotaUpdatedAt != nil }
-        if !timestamped.isEmpty {
-            return timestamped.max {
-                ($0.quotaUpdatedAt ?? .distantPast) < ($1.quotaUpdatedAt ?? .distantPast)
+        let candidates = snapshots.filter { snapshot in
+            guard snapshot.isQuotaAvailable else { return false }
+            switch preferredSourceID {
+            case Self.automaticSelectionID:
+                return true
+            case ClaudeSnapshotSource.local.id:
+                return snapshot.resolvedSource.id == ClaudeSnapshotSource.local.id
+            default:
+                return snapshot.resolvedSource.id == preferredSourceID
             }
         }
-        // Legacy cache files predate quotaUpdatedAt. The 5h reset is the best
-        // available proxy for which account-wide payload was captured last.
-        return candidates.max {
-            legacyQuotaRecency($0) < legacyQuotaRecency($1)
-        }
+        return QuotaSnapshotSelector.latest(in: candidates)
     }
 
     var remoteSourceID: String { remoteConfiguration.sourceID }
@@ -255,12 +250,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func legacyQuotaRecency(_ snapshot: ClaudeSessionSnapshot) -> Date {
-        snapshot.fiveHour?.resetsAt
-            ?? snapshot.sevenDay?.resetsAt
-            ?? snapshot.updatedAt
-    }
-
     var selectedSessionBindingID: String {
         get {
             guard let selectedSessionID else { return Self.automaticSelectionID }
@@ -302,6 +291,18 @@ final class AppModel: ObservableObject {
 
     var statusLineIsHealthy: Bool {
         installationStatus?.isHealthy == true
+    }
+
+    var quotaDataIsCurrent: Bool {
+        guard let quotaSnapshot else { return false }
+        return quotaSnapshot.fiveHour?.current() != nil
+            || quotaSnapshot.sevenDay?.current() != nil
+    }
+
+    var quotaDataSummary: String {
+        if quotaDataIsCurrent { return "Current" }
+        if quotaSnapshot != nil { return "Expired · send a Claude turn" }
+        return "Waiting for a Claude turn"
     }
 
     func start() {
@@ -395,7 +396,11 @@ final class AppModel: ObservableObject {
     }
 
     func connectRemote() {
+        remoteConnectionDesired = true
+        remoteReconnectTask?.cancel()
+        remoteReconnectTask = nil
         guard remoteConfiguration.isInstalled else {
+            remoteConnectionDesired = false
             remoteConnectionState = .disconnected
             statusMessage = "Install the remote wrapper before connecting."
             return
@@ -411,9 +416,27 @@ final class AppModel: ObservableObject {
                     try SSHRemoteInstaller.removeStaleSocket(configuration)
                 }.value
                 guard let self else { return }
+                guard self.remoteConnectionDesired else {
+                    self.remoteSetupIsBusy = false
+                    self.remoteConnectionState = .disconnected
+                    return
+                }
                 try self.startRemoteTransport(configuration)
                 try? await Task.sleep(for: .milliseconds(700))
-                guard self.remoteTunnel.isRunning else { return }
+                guard self.remoteConnectionDesired else {
+                    self.stopRemoteTransport()
+                    self.remoteSetupIsBusy = false
+                    self.remoteConnectionState = .disconnected
+                    return
+                }
+                guard self.remoteTunnel.isRunning else {
+                    self.remoteSetupIsBusy = false
+                    if !self.remoteConnectionState.isFailed {
+                        self.remoteConnectionState = .failed("SSH tunnel closed during startup")
+                    }
+                    self.scheduleRemoteReconnect()
+                    return
+                }
                 self.remoteSetupIsBusy = false
                 self.remoteConnectionState = .connected
                 self.statusMessage = "SSH source connected: \(configuration.displayName)."
@@ -421,13 +444,21 @@ final class AppModel: ObservableObject {
             } catch {
                 self?.remoteSetupIsBusy = false
                 self?.stopRemoteTransport()
-                self?.remoteConnectionState = .failed(error.localizedDescription)
-                self?.statusMessage = "SSH connection failed: \(error.localizedDescription)"
+                if self?.remoteConnectionDesired == true {
+                    self?.remoteConnectionState = .failed(error.localizedDescription)
+                    self?.statusMessage = "SSH connection failed: \(error.localizedDescription)"
+                    self?.scheduleRemoteReconnect()
+                } else {
+                    self?.remoteConnectionState = .disconnected
+                }
             }
         }
     }
 
     func disconnectRemote() {
+        remoteConnectionDesired = false
+        remoteReconnectTask?.cancel()
+        remoteReconnectTask = nil
         stopRemoteTransport()
         remoteDiscoveryTask?.cancel()
         remoteDiscoveryTask = nil
@@ -652,11 +683,17 @@ final class AppModel: ObservableObject {
     }
 
     private func updateRemoteConnectionForSelection() {
-        guard remoteConfiguration.isInstalled else { return }
+        guard remoteConfiguration.isInstalled else {
+            remoteConnectionDesired = false
+            return
+        }
         if preferredSourceID == ClaudeSnapshotSource.local.id {
             disconnectRemote()
-        } else if !remoteTunnel.isRunning, !remoteSetupIsBusy {
-            connectRemote()
+        } else {
+            remoteConnectionDesired = true
+            if !remoteTunnel.isRunning, !remoteSetupIsBusy {
+                connectRemote()
+            }
         }
     }
 
@@ -692,7 +729,9 @@ final class AppModel: ObservableObject {
                 self.remotePayloadServer = nil
                 self.remoteSetupIsBusy = false
                 self.remoteConnectionState = .failed(message ?? "SSH tunnel closed")
-                self.statusMessage = message.map { "SSH tunnel closed: \($0)" } ?? "SSH tunnel closed."
+                self.statusMessage = message.map { "SSH tunnel closed: \($0)" }
+                    ?? "SSH tunnel closed."
+                self.scheduleRemoteReconnect()
             }
         } catch {
             server.stop()
@@ -705,6 +744,23 @@ final class AppModel: ObservableObject {
         remoteTunnel.disconnect()
         remotePayloadServer?.stop()
         remotePayloadServer = nil
+    }
+
+    private func scheduleRemoteReconnect() {
+        remoteReconnectTask?.cancel()
+        guard remoteConnectionDesired,
+              remoteConfiguration.isInstalled,
+              preferredSourceID != ClaudeSnapshotSource.local.id else {
+            return
+        }
+
+        statusMessage = "SSH disconnected. Retrying in 8 seconds…"
+        remoteReconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, let self, self.remoteConnectionDesired else { return }
+            self.remoteReconnectTask = nil
+            self.connectRemote()
+        }
     }
 
     private func startRemoteDiscovery(_ configuration: RemoteClaudeConfiguration) {
@@ -754,6 +810,9 @@ final class AppModel: ObservableObject {
     }
 
     private func startLocalDiscovery() {
+        guard ProcessInfo.processInfo.environment["CQI_DISABLE_DISCOVERY"] != "1" else {
+            return
+        }
         localDiscoveryTask?.cancel()
         localDiscoveryTask = Task { [weak self] in
             while !Task.isCancelled {

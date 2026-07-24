@@ -137,16 +137,24 @@ private struct NotchBarContent: View {
             .onHover(perform: onHoverChanged)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .preferredColorScheme(.dark)
+        .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: isExpanded)
     }
 
     private var quotaLane: some View {
         HStack(spacing: quotaSpacing) {
-            quotaItem(label: "5h", symbol: "clock", window: quotaSnapshot?.fiveHour)
+            quotaItem(
+                label: "5h",
+                symbol: "clock",
+                window: quotaSnapshot?.fiveHour?.current(at: now)
+            )
             laneDivider
-            quotaItem(label: "7d", symbol: "calendar", window: quotaSnapshot?.sevenDay)
+            quotaItem(
+                label: "7d",
+                symbol: "calendar",
+                window: quotaSnapshot?.sevenDay?.current(at: now)
+            )
         }
         .padding(.horizontal, isExpanded ? 11 : 8)
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -240,7 +248,7 @@ private struct NotchBarContent: View {
     @ViewBuilder
     private var sessionLane: some View {
         HStack(spacing: 0) {
-            sessionContent
+            rightSideContent
 
             if isInteractive && isExpanded {
                 sessionPickerMenu
@@ -248,56 +256,63 @@ private struct NotchBarContent: View {
                     .padding(.trailing, 8)
             }
         }
-        .opacity(sessionSnapshot?.isFresh(at: now) == false ? 0.62 : 1)
+        .opacity(
+            preferences.rightSideMode == .claudeOnly
+                ? 1
+                : (sessionSnapshot?.isFresh(at: now) == false ? 0.62 : 1)
+        )
         .accessibilityLabel(sessionAccessibilityLabel)
     }
 
     private var sessionPickerMenu: some View {
         Menu {
-            Button {
-                onSelectProject(nil)
-                onSelectSession(nil)
-            } label: {
-                if selectedProjectID == nil, selectedSessionID == nil {
-                    Image(systemName: "checkmark")
-                }
-                Text("Automatic · monitored folders")
-            }
-
-            if !projects.isEmpty { Divider() }
-            ForEach(Array(projects.prefix(10))) { project in
-                Menu {
-                    Button {
-                        onSelectProject(project.id)
-                    } label: {
-                        if selectedProjectID == project.id, selectedSessionID == nil {
-                            Image(systemName: "checkmark")
-                        }
-                        Text("Most recent conversation")
-                    }
-
-                    if !project.sessions.isEmpty { Divider() }
-                    ForEach(Array(project.sessions.prefix(8))) { session in
-                        Button {
-                            onSelectSession(session.id)
-                        } label: {
-                            if selectedSessionID == session.id { Image(systemName: "checkmark") }
-                            Text(sessionMenuTitle(session))
-                        }
-                    }
-                    if project.sessions.count > 8 {
-                        Divider()
-                        Button("\(project.sessions.count - 8) more…", action: onShowSettings)
-                    }
+            if preferences.rightSideMode == .modelAndContext {
+                Button {
+                    onSelectProject(nil)
+                    onSelectSession(nil)
                 } label: {
-                    Text(projectMenuTitle(project))
+                    if selectedProjectID == nil, selectedSessionID == nil {
+                        Image(systemName: "checkmark")
+                    }
+                    Text("Automatic · monitored folders")
                 }
-            }
-            if projects.count > 10 {
-                Button("\(projects.count - 10) more projects…", action: onShowSettings)
+
+                if !projects.isEmpty { Divider() }
+                ForEach(Array(projects.prefix(10))) { project in
+                    Menu {
+                        Button {
+                            onSelectProject(project.id)
+                        } label: {
+                            if selectedProjectID == project.id, selectedSessionID == nil {
+                                Image(systemName: "checkmark")
+                            }
+                            Text("Most recent conversation")
+                        }
+
+                        if !project.sessions.isEmpty { Divider() }
+                        ForEach(Array(project.sessions.prefix(8))) { session in
+                            Button {
+                                onSelectSession(session.id)
+                            } label: {
+                                if selectedSessionID == session.id { Image(systemName: "checkmark") }
+                                Text(sessionMenuTitle(session))
+                            }
+                        }
+                        if project.sessions.count > 8 {
+                            Divider()
+                            Button("\(project.sessions.count - 8) more…", action: onShowSettings)
+                        }
+                    } label: {
+                        Text(projectMenuTitle(project))
+                    }
+                }
+                if projects.count > 10 {
+                    Button("\(projects.count - 10) more projects…", action: onShowSettings)
+                }
+
+                Divider()
             }
 
-            Divider()
             Button("Settings…", action: onShowSettings)
             Button("Quit", action: onQuit)
         } label: {
@@ -309,7 +324,27 @@ private struct NotchBarContent: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .accessibilityLabel("Choose Claude session")
+        .accessibilityLabel(
+            preferences.rightSideMode == .claudeOnly
+                ? "Claude Quota Island menu"
+                : "Choose Claude session"
+        )
+    }
+
+    @ViewBuilder
+    private var rightSideContent: some View {
+        if preferences.rightSideMode == .claudeOnly {
+            Text("Claude")
+                .font(isExpanded ? statusFont : compactStatusFont)
+                .fontWeight(.semibold)
+                .foregroundStyle(.cyan)
+                .fixedSize()
+                .padding(.leading, isExpanded ? 12 : 8)
+                .padding(.trailing, isExpanded ? 5 : 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        } else {
+            sessionContent
+        }
     }
 
     @ViewBuilder
@@ -478,15 +513,24 @@ private struct NotchBarContent: View {
     }
 
     private var quotaAccessibilityLabel: String {
-        let five = QuotaFormatter.percentage(quotaSnapshot?.fiveHour?.usedPercentage, metric: preferences.quotaMetric)
+        let five = QuotaFormatter.percentage(
+            quotaSnapshot?.fiveHour?.current(at: now)?.usedPercentage,
+            metric: preferences.quotaMetric
+        )
             .map(String.init) ?? "unavailable"
-        let seven = QuotaFormatter.percentage(quotaSnapshot?.sevenDay?.usedPercentage, metric: preferences.quotaMetric)
+        let seven = QuotaFormatter.percentage(
+            quotaSnapshot?.sevenDay?.current(at: now)?.usedPercentage,
+            metric: preferences.quotaMetric
+        )
             .map(String.init) ?? "unavailable"
         return "Five hour quota \(five) percent. Seven day quota \(seven) percent."
     }
 
     private var sessionAccessibilityLabel: String {
-        "\(sessionSnapshot?.modelDisplayName ?? "Claude"), context \(contextPercentageText), session \(sessionSnapshot?.title ?? "unavailable")"
+        if preferences.rightSideMode == .claudeOnly {
+            return "Claude quota tracker"
+        }
+        return "\(sessionSnapshot?.modelDisplayName ?? "Claude"), context \(contextPercentageText), session \(sessionSnapshot?.title ?? "unavailable")"
     }
 }
 

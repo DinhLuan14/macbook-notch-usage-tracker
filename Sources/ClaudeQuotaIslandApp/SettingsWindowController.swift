@@ -22,6 +22,7 @@ final class SettingsWindowController {
         let window = NSWindow(contentViewController: controller)
         window.title = "Claude Quota Island Settings"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.backgroundColor = .windowBackgroundColor
         window.setContentSize(NSSize(width: 640, height: 560))
         window.minSize = NSSize(width: 600, height: 500)
         window.isReleasedWhenClosed = false

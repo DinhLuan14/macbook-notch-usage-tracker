@@ -60,7 +60,7 @@ public final class SnapshotStore: @unchecked Sendable {
             totalOutputTokens: payload.contextWindow?.totalOutputTokens ?? existing?.totalOutputTokens,
             fiveHour: quotaWindow(payload.rateLimits?.fiveHour) ?? existing?.fiveHour,
             sevenDay: quotaWindow(payload.rateLimits?.sevenDay) ?? existing?.sevenDay,
-            quotaUpdatedAt: payloadHasQuota(payload) ? date : existing?.quotaUpdatedAt,
+            quotaUpdatedAt: payloadHasQuota(payload) ? date : migratedQuotaDate(existing),
             updatedAt: date
         )
         try save(snapshot, to: url)
@@ -91,7 +91,7 @@ public final class SnapshotStore: @unchecked Sendable {
             totalOutputTokens: existing?.totalOutputTokens ?? discovered.totalOutputTokens,
             fiveHour: existing?.fiveHour ?? discovered.fiveHour,
             sevenDay: existing?.sevenDay ?? discovered.sevenDay,
-            quotaUpdatedAt: existing?.quotaUpdatedAt ?? discovered.quotaUpdatedAt,
+            quotaUpdatedAt: migratedQuotaDate(existing) ?? discovered.quotaUpdatedAt,
             updatedAt: max(existing?.updatedAt ?? .distantPast, discovered.updatedAt)
         )
         try save(snapshot, to: url)
@@ -159,6 +159,11 @@ public final class SnapshotStore: @unchecked Sendable {
     private func payloadHasQuota(_ payload: ClaudeStatusLinePayload) -> Bool {
         payload.rateLimits?.fiveHour?.usedPercentage != nil
             || payload.rateLimits?.sevenDay?.usedPercentage != nil
+    }
+
+    private func migratedQuotaDate(_ snapshot: ClaudeSessionSnapshot?) -> Date? {
+        guard let snapshot, snapshot.isQuotaAvailable else { return nil }
+        return snapshot.quotaUpdatedAt ?? snapshot.updatedAt
     }
 
     private func loadSnapshot(from url: URL) throws -> ClaudeSessionSnapshot {

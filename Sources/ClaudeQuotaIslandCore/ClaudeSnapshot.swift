@@ -22,6 +22,11 @@ public struct ClaudeQuotaWindow: Codable, Equatable, Sendable {
         self.usedPercentage = usedPercentage
         self.resetsAt = resetsAt
     }
+
+    public func current(at date: Date = .now) -> ClaudeQuotaWindow? {
+        guard resetsAt.map({ $0 > date }) ?? true else { return nil }
+        return self
+    }
 }
 
 public struct ClaudeSessionSnapshot: Codable, Equatable, Identifiable, Sendable {

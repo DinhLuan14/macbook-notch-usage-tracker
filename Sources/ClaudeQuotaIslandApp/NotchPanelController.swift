@@ -78,6 +78,7 @@ final class NotchPanelController {
         )
         panel.isFloatingPanel = true
         panel.level = .statusBar
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
@@ -96,6 +97,7 @@ final class NotchPanelController {
                 sessionSnapshot: model.selectedSnapshot
             )
         let hostingView = HoverTrackingHostingView(rootView: NotchBarView(model: model, metrics: metrics))
+        hostingView.appearance = NSAppearance(named: .darkAqua)
         hostingView.onHoverChanged = { [weak model] hovering in
             model?.handleIslandHover(hovering)
         }

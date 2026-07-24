@@ -39,7 +39,7 @@ struct NotchLayoutMetrics: Equatable {
             quotaSnapshot: quotaSnapshot,
             sessionSnapshot: sessionSnapshot
         )
-        let expanded = expandedSideWidths(for: preferences.style)
+        let expanded = expandedSideWidths(for: preferences)
         let collapsedHeight = ScreenResolver.barHeight(for: screen)
         return NotchLayoutMetrics(
             collapsedLeftWidth: collapsed.left,
@@ -63,7 +63,7 @@ struct NotchLayoutMetrics: Equatable {
             quotaSnapshot: quotaSnapshot,
             sessionSnapshot: sessionSnapshot
         )
-        let expanded = expandedSideWidths(for: preferences.style)
+        let expanded = expandedSideWidths(for: preferences)
         return NotchLayoutMetrics(
             collapsedLeftWidth: collapsed.left,
             expandedLeftWidth: min(expanded.left, 260),
@@ -77,13 +77,22 @@ struct NotchLayoutMetrics: Equatable {
     }
 
     private static func expandedSideWidths(
-        for style: NotchDisplayStyle
+        for preferences: DisplayPreferences
     ) -> (left: CGFloat, right: CGFloat) {
-        switch style {
-        case .full: (272, 280)
-        case .iconCompact: (232, 258)
-        case .progressRings: (264, 258)
-        case .minimal: (176, 204)
+        let left: CGFloat
+        switch preferences.style {
+        case .full: left = 272
+        case .iconCompact: left = 232
+        case .progressRings: left = 264
+        case .minimal: left = 176
+        }
+        if preferences.rightSideMode == .claudeOnly {
+            return (left, 106)
+        }
+        switch preferences.style {
+        case .full: return (left, 280)
+        case .iconCompact, .progressRings: return (left, 258)
+        case .minimal: return (left, 204)
         }
     }
 }
@@ -104,17 +113,20 @@ private enum CompactNotchWidthResolver {
         quotaSnapshot: ClaudeSessionSnapshot?,
         sessionSnapshot: ClaudeSessionSnapshot?
     ) -> (left: CGFloat, right: CGFloat) {
+        let now = Date.now
+        let fiveHour = quotaSnapshot?.fiveHour?.current(at: now)
+        let sevenDay = quotaSnapshot?.sevenDay?.current(at: now)
         let usesSymbols = preferences.style == .iconCompact || preferences.style == .progressRings
         let fiveHourWidth = quotaItemWidth(
             label: "5h",
             percentage: percentageText(
-                quotaSnapshot?.fiveHour?.usedPercentage,
+                fiveHour?.usedPercentage,
                 metric: preferences.quotaMetric
             ),
             usesSymbol: usesSymbols,
             reset: preferences.showsResetTime
                 ? QuotaFormatter.resetDuration(
-                    until: quotaSnapshot?.fiveHour?.resetsAt,
+                    until: fiveHour?.resetsAt,
                     compact: true
                 )
                 : nil
@@ -122,7 +134,7 @@ private enum CompactNotchWidthResolver {
         let sevenDayWidth = quotaItemWidth(
             label: "7d",
             percentage: percentageText(
-                quotaSnapshot?.sevenDay?.usedPercentage,
+                sevenDay?.usedPercentage,
                 metric: preferences.quotaMetric
             ),
             usesSymbol: usesSymbols,
@@ -135,6 +147,16 @@ private enum CompactNotchWidthResolver {
             + laneSpacing
             + sevenDayWidth
             + leftSafetyMargin
+
+        if preferences.rightSideMode == .claudeOnly {
+            let right = laneHorizontalPadding
+                + textWidth("Claude", weight: .semibold)
+                + rightSafetyMargin
+            return (
+                left: ceil(min(max(left, 68), 176)),
+                right: ceil(min(max(right, 54), 86))
+            )
+        }
 
         let model = sessionSnapshot?.modelDisplayName ?? "Claude"
         let modelSlot = min(
