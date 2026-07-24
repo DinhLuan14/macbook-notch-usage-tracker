@@ -339,9 +339,8 @@ private struct NotchBarContent: View {
                 .fontWeight(.semibold)
                 .foregroundStyle(.cyan)
                 .fixedSize()
-                .padding(.leading, isExpanded ? 12 : 8)
-                .padding(.trailing, isExpanded ? 5 : 8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else {
             sessionContent
         }
